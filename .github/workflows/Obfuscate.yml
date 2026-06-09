@@ -50,9 +50,7 @@ jobs:
       - name: Obfuscate JS
         if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
         run: |
-          # 同样在这里调用全局变量 $REPO
           wget -O origin.js https://raw.githubusercontent.com/$REPO/main/_worker.js
-          
           javascript-obfuscator origin.js --output _worker.js \
           --compact true \
           --string-array true \
