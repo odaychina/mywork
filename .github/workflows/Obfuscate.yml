@@ -21,20 +21,13 @@ jobs:
       - name: Checkout current repository
         uses: actions/checkout@v6
 
-      - name: Check for Updates via API
+      - name: Check for Updates
         id: check_update
         run: |
-          NEW_TS=$(curl -s "https://api.github.com/repos/$REPO/commits?per_page=1" | jq -r '.[0].commit.committer.date')
-          echo "Upstream updated at: $NEW_TS"
-          if [ -f "_worker.js" ]; then
-            OLD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" -r _worker.js)
-            if [ "$NEW_TS" = "$OLD_TS" ]; then
-              echo "No changes detected."
-              echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
+          NEW_TS=$(date -d "$(curl -sI "https://api.github.com/repos/$REPO/commits?per_page=1" | grep -i '^date:' | awk '{print $2, $3, $4, $5}')" +%s)
+          if [ -f "_worker.js" ] && [ "$(date -u -r _worker.js +%s)" -ge "$NEW_TS" ]; then
+            echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT; exit 0
           fi
-          echo "Update run!"
           echo "UPDATE_NEEDED=true" >> $GITHUB_OUTPUT
 
       - name: Set up Node.js
