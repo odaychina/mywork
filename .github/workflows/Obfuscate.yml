@@ -1,4 +1,4 @@
-name: Auto Obfuscate edgetunnel
+name: Auto Obfuscate
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch: 
 
 env:
-  REPO: "odaychina/edgetunnel"
+  REPO: "odaychina/edge"
 
 permissions:
   contents: write
