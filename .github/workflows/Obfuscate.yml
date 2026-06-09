@@ -1,0 +1,70 @@
+name: Auto Obfuscate edgetunnel
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 6 * * *" 
+
+env:
+  REPO: "odaychina/edgetunnel"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v6
+
+      - name: Check for Updates via API
+        id: check_update
+        run: |
+          NEW_TS=$(curl -s "https://api.github.com/repos/$REPO/commits?per_page=1" | jq -r '.[0].commit.committer.date')
+          echo "Upstream updated at: $NEW_TS"
+          if [ -f "_worker.js" ]; then
+            OLD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" -r _worker.js)
+            if [ "$NEW_TS" = "$OLD_TS" ]; then
+              echo "No changes detected."
+              echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          echo "Update run!"
+          echo "UPDATE_NEEDED=true" >> $GITHUB_OUTPUT
+
+      - name: Set up Node.js
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install obfuscator
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        run: npm install -g javascript-obfuscator
+
+      - name: Obfuscate JS
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        run: |
+          # 同样在这里调用全局变量 $REPO
+          wget -O origin.js https://raw.githubusercontent.com/$REPO/main/_worker.js
+          
+          javascript-obfuscator origin.js --output _worker.js \
+          --compact true \
+          --string-array true \
+          --string-array-encoding 'base64' \
+          --string-array-threshold 0.75 \
+          --identifier-names-generator hexadecimal \
+          --rename-globals true \
+          --transform-object-keys true
+
+      - name: Commit and Push
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          branch: main
+          commit_message: '🤖 Auto obfuscate'
+          file_pattern: '_worker.js' 
