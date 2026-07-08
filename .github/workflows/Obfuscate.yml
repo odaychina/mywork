@@ -22,43 +22,42 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Check for Updates
-        id: check_update2
+        id: check_update
         run: |
-          REMOTE_DATE=$(curl -s "https://api.github.com/repos/${{ env.REPO }}/commits?per_page=1" | jq -r '.[0].commit.committer.date')
+          REMOTE_DATE=$(curl -s "https://api.github.com/repos/$REPO/commits?per_page=1" | jq -r '.[0].commit.committer.date')
           if [ "$REMOTE_DATE" = "null" ] || [ -z "$REMOTE_DATE" ]; then
             echo "⚠️ Failed to fetch remote date"
             echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           NEW_TS=$(date -d "$REMOTE_DATE" +%s)
-          LOCAL_TS=0
-          [ -f "_worker.js" ] && LOCAL_TS=$(date -u -r _worker.js +%s)
-          echo "Remote: $REMOTE_DATE ($NEW_TS) | Local: $LOCAL_TS"
+
+          LOCAL_DATE=$(git log -1 --format=%aI -- _worker.js 2>/dev/null || echo "")
+          if [ -z "$LOCAL_DATE" ]; then
+            LOCAL_TS=0
+          else
+            LOCAL_TS=$(date -d "$LOCAL_DATE" +%s)
+          fi
+          
+          echo "Remote: $REMOTE_DATE ($NEW_TS) | Local Git: $LOCAL_DATE ($LOCAL_TS)"
           if (( LOCAL_TS >= NEW_TS )); then
             echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT
           else
             echo "UPDATE_NEEDED=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for Updates2
-        id: check_update
-        run: |
-          # ⚠️ 测试专用：强制触发更新
-          echo "UPDATE_NEEDED=true" >> $GITHUB_OUTPUT
-          echo "⚠️ Forced update for testing"
-    
       - name: Set up Node.js
-        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-node@v6
         with:
           node-version: "24"
 
       - name: Install obfuscator
-        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true' || github.event_name == 'workflow_dispatch'
         run: npm install -g javascript-obfuscator
 
       - name: Obfuscate JS
-        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           wget -O origin.js https://raw.githubusercontent.com/$REPO/main/_worker.js
           javascript-obfuscator origin.js --output _worker.js \
@@ -71,7 +70,7 @@ jobs:
           --transform-object-keys true
 
       - name: Commit and Push
-        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true' || github.event_name == 'workflow_dispatch'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           branch: main
