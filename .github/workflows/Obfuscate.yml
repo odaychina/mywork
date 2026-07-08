@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "10 3,12,16 * * *" 
+    - cron: "10 3,12,16 * * *"
   workflow_dispatch: 
 
 env:
@@ -24,26 +24,25 @@ jobs:
       - name: Check for Updates
         id: check_update
         run: |
-          REMOTE_DATE=$(curl -s "https://api.github.com/repos/$REPO/commits?per_page=1" | jq -r '.[0].commit.committer.date')
-          if [ "$REMOTE_DATE" = "null" ] || [ -z "$REMOTE_DATE" ]; then
-            echo "⚠️ Failed to fetch remote date"
+          # 1. 获取远程最新 commit SHA
+          REMOTE_SHA=$(curl -s "https://api.github.com/repos/${{ env.REPO }}/commits?per_page=1" | jq -r '.[0].sha')
+          if [ "$REMOTE_SHA" = "null" ] || [ -z "$REMOTE_SHA" ]; then
+            echo "⚠️ Failed to fetch remote SHA"
             echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          NEW_TS=$(date -d "$REMOTE_DATE" +%s)
-
-          LOCAL_DATE=$(git log -1 --format=%aI -- _worker.js 2>/dev/null || echo "")
-          if [ -z "$LOCAL_DATE" ]; then
-            LOCAL_TS=0
-          else
-            LOCAL_TS=$(date -d "$LOCAL_DATE" +%s)
-          fi
-          
-          echo "Remote: $REMOTE_DATE ($NEW_TS) | Local Git: $LOCAL_DATE ($LOCAL_TS)"
-          if (( LOCAL_TS >= NEW_TS )); then
+          # 2. 读取上次同步记录的 SHA
+          LOCAL_SHA=""
+          [ -f ".sync_sha" ] && LOCAL_SHA=$(cat .sync_sha)
+          echo "Remote SHA: ${REMOTE_SHA:0:7} | Local SHA: ${LOCAL_SHA:0:7}"
+          # 3. 比较
+          if [ "$REMOTE_SHA" = "$LOCAL_SHA" ]; then
+            echo "✅ Already up to date"
             echo "UPDATE_NEEDED=false" >> $GITHUB_OUTPUT
           else
+            echo "🔄 Update available"
             echo "UPDATE_NEEDED=true" >> $GITHUB_OUTPUT
+            echo "NEW_SHA=$REMOTE_SHA" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up Node.js
@@ -76,3 +75,13 @@ jobs:
           branch: main
           commit_message: '🤖 Auto obfuscate'
           file_pattern: '_worker.js' 
+          
+      - name: update sha
+        if: steps.check_update.outputs.UPDATE_NEEDED == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "${{ steps.check_update.outputs.NEW_SHA }}" > .sync_sha
+          git add .sync_sha _worker.js
+          git commit -m "chore: sync worker from ${{ env.REPO }}@${{ steps.check_update.outputs.NEW_SHA }}"
+          git push origin main
